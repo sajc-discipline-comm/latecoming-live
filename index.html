@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Latecoming — Live Data</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,400..700,0..100,0..1&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!--
+  ============================================================================
+  SAJC DISCIPLINE HUB — THE GENERAL OFFICE VIEW
+  ============================================================================
+  One screen, for one person, doing one job: keying this morning's latecomers
+  into SCMobile before the deadline.
+
+  THE DESIGN IS THE APPROVED PROTOTYPE'S, not a fresh interpretation of it.
+  Type scale, the .lrow card, the group labels, the counts pair, the rule
+  under the date — all lifted from StepE_Preview.html, which Kim reviewed
+  screen by screen. Only the behaviour below is new.
+
+  IT WRITES NOTHING. There is no tick that is saved, no state to reconcile,
+  no name field. Striking a row through marks the officer's place and lives
+  in this page only; closing the tab forgets it. The moment this screen could
+  write, it would need a name, an audit trail and a reason for every
+  disagreement with the Log.
+
+  IT REACHES EXACTLY ONE ACTION. The General Office password issues a 'go'
+  token, and the server's GO_ACTIONS whitelist is { hubLive: 1 }. Everything
+  else in the Hub answers a 'go' token with a refusal.
+
+  THE TOKEN IS HELD IN MEMORY AND NOWHERE ELSE. No localStorage, no
+  sessionStorage, no cookie. Reloading signs her back out, which is the right
+  trade for a machine at a front desk that other people walk past.
+
+  AN EMPTY LIST IS NEVER SHOWN AS GOOD NEWS. Silence from the gate looks
+  exactly like nobody being late. The heartbeat is what tells them apart.
+  ============================================================================
+-->
+
+<style>
+:root{
+  --accent:#27326a; --accent-deep:#1b2450; --accent-tint:#e8eaf3;
+  --paper:#f7f5f1; --raised:#fffdfa; --line:#e4ded4;
+  --ink:#1b1e2b; --muted:#6e7180;
+  --good:#2f6b4f; --good-tint:#e6f0ea;
+  --warn:#8a5a12; --warn-tint:#f7edda;
+  --bad:#9d372e;  --bad-tint:#f7e8e5;
+  --curve:cubic-bezier(.22,.61,.36,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:'Public Sans',system-ui,-apple-system,sans-serif;
+  font-size:17px;line-height:1.55;letter-spacing:-.005em;
+  color:var(--ink);background:var(--paper);
+  height:100vh;overflow:hidden;
+}
+h1{
+  font-family:'Fraunces',Georgia,serif;
+  font-variation-settings:'opsz' 90,'SOFT' 30,'WONK' 1;
+  font-weight:600;font-size:33px;line-height:1.16;
+}
+h1.big{font-size:44px;margin-bottom:6px}
+
+#view{height:100%;overflow-y:auto}
+
+.screen{padding:44px 40px 34px;animation:rise .42s var(--curve) both}
+.screen.still{animation:none}
+.screen.centre{min-height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+@keyframes rise{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+
+.wrap{max-width:760px;margin:0 auto;width:100%}
+.wrap.wide{max-width:990px}
+
+.date{
+  font-size:19px;font-weight:600;color:var(--ink);
+  display:flex;align-items:center;gap:12px;margin-bottom:16px;
+}
+.date:after{content:'';flex:1;height:1px;background:var(--line)}
+.centre .date{justify-content:center}
+.centre .date:after{display:none}
+
+.beat{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.beat i{display:inline-block;width:7px;height:7px;border-radius:50%;
+        background:var(--good);margin-right:7px;animation:pulse 2.4s var(--curve) infinite}
+.beat.stale i{background:var(--warn);animation:none}
+.beat.down  i{background:var(--bad); animation:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+.field{margin-top:22px;max-width:430px}
+.centre .field{margin-left:auto;margin-right:auto;text-align:left}
+.field label{display:block;font-size:11.5px;font-weight:600;text-transform:uppercase;
+             letter-spacing:.14em;color:var(--muted);margin-bottom:8px}
+.field input{
+  width:100%;font:inherit;font-size:21px;color:var(--ink);
+  background:none;border:0;border-bottom:2px solid var(--line);
+  padding:6px 0;outline:none;transition:border-color .28s var(--curve);
+}
+.field input:focus{border-bottom-color:var(--accent)}
+
+.stack{display:flex;flex-direction:column;gap:9px;margin-top:28px;max-width:430px}
+.centre .stack{margin-left:auto;margin-right:auto;width:100%}
+button{
+  font:inherit;font-weight:500;font-size:16px;border:0;cursor:pointer;
+  background:var(--accent);color:#fff;padding:15px 22px;border-radius:9px;
+  box-shadow:0 2px 8px rgba(39,50,106,.18);
+  transition:transform .18s var(--curve),background .18s var(--curve),box-shadow .18s var(--curve);
+}
+button:hover{background:var(--accent-deep);transform:translateY(-1.5px);box-shadow:0 6px 16px rgba(39,50,106,.24)}
+button:active{transform:translateY(1px)}
+button:disabled{background:#cfcabf;box-shadow:none;cursor:default;transform:none}
+button.plain{background:none;color:var(--muted);box-shadow:none;font-size:14px;padding:0}
+button.plain:hover{background:none;color:var(--ink);transform:none;box-shadow:none;text-decoration:underline}
+
+.counts{display:flex;align-items:baseline;gap:30px;flex-wrap:wrap}
+.counts h1{margin:0}
+.counts .togo{
+  font-family:'Fraunces',Georgia,serif;
+  font-variation-settings:'opsz' 90,'SOFT' 30,'WONK' 1;
+  font-weight:600;font-size:33px;color:var(--muted);
+}
+.counts .togo b{color:var(--accent)}
+.counts .togo.zero,.counts .togo.zero b{color:var(--good)}
+
+/* One family of notes: a coloured left edge and a tinted wash. */
+.note{font-size:15px;border-left:3px solid;border-radius:0 9px 9px 0;padding:13px 18px;margin-top:16px}
+.note.how {color:#22553f;background:var(--good-tint);  border-color:var(--good)}
+.note.say {color:var(--accent-deep);background:var(--accent-tint);border-color:var(--accent)}
+.note.warn{color:var(--warn);background:var(--warn-tint);border-color:var(--warn)}
+.note.bad {color:var(--bad); background:var(--bad-tint); border-color:var(--bad)}
+.note b{font-weight:600}
+
+.grouplabel{
+  display:flex;align-items:center;gap:14px;margin:26px 0 10px;
+  font-size:11.5px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.14em;color:var(--muted);
+}
+.grouplabel:after{content:'';flex:1;height:1px;background:var(--line)}
+.grouplabel.unknown{color:var(--warn)}
+.grouplabel.unknown:after{background:#e9dcc2}
+
+.deadline{
+  display:flex;align-items:center;gap:14px;margin:24px 0 12px;
+  font-size:11.5px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.14em;color:var(--bad);
+}
+.deadline:before,.deadline:after{content:'';flex:1;height:1px;background:#e0cdc8}
+
+.lrow{
+  display:flex;align-items:center;padding:12px 16px;
+  background:var(--raised);border:1px solid var(--line);border-radius:9px;
+  margin-bottom:5px;cursor:pointer;transition:all .22s var(--curve);
+}
+.lrow:hover{transform:translateX(2.5px);border-color:#d6cfc2}
+.lrow .cls{flex:0 0 80px;font-weight:600;font-size:16px}
+.lrow .idx{flex:0 0 48px;color:var(--muted);font-size:16px;font-variant-numeric:tabular-nums}
+.lrow .idx.none{color:#b3aea3}
+.lrow .nm{flex:1;font-size:17px;min-width:0}
+.lrow .tag{
+  flex:0 0 auto;font-size:11.5px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.09em;padding:3px 9px;border-radius:999px;margin-right:14px;
+  background:#efece6;color:var(--muted);white-space:nowrap;
+}
+.lrow .tag.twice{background:var(--warn-tint);color:var(--warn)}
+.lrow .tm{flex:0 0 62px;text-align:right;color:var(--muted);font-size:14.5px;font-variant-numeric:tabular-nums}
+.lrow.done{background:#eceae6;border-color:#e0ddd6;opacity:.55}
+.lrow.done .nm,.lrow.done .cls,.lrow.done .idx{text-decoration:line-through;color:var(--muted)}
+.lrow.done:hover{transform:none}
+.lrow.fresh{animation:flash 1.8s var(--curve)}
+@keyframes flash{0%{background:var(--accent-tint);transform:translateY(-6px);opacity:0}
+                 100%{background:var(--raised);transform:none;opacity:1}}
+
+.blank{color:var(--muted);padding:46px 0 10px;font-size:17px}
+
+.foot{
+  font-size:12.5px;color:var(--muted);margin-top:26px;
+  display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+}
+.foot .sp{flex:1}
+
+.err{font-size:15px;color:var(--bad);margin-top:18px;max-width:430px}
+.centre .err{margin-left:auto;margin-right:auto}
+.hidden{display:none !important}
+
+@media (max-width:640px){
+  .screen{padding:26px 18px 30px}
+  h1{font-size:26px} h1.big{font-size:33px}
+  .counts .togo{font-size:26px}
+  .lrow{padding:11px 12px}
+  .lrow .cls{flex:0 0 66px;font-size:15px}
+  .lrow .idx{flex:0 0 36px;font-size:15px}
+  .lrow .tag{display:none}
+}
+</style>
+</head>
+
+<body>
+<div id="view"></div>
+
+<script>
+(function(){
+'use strict';
+
+/* ══ THE ONE ADDRESS ══════════════════════════════════════════════════════
+   The same deployment that serves the gate scanner and the green slip form.
+   Public by necessity — a cross-origin fetch from GitHub Pages carries no
+   Google cookies — which is why every request is checked against a token
+   server-side, including this read-only one.                              */
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbzEviXmBucgufueIuXLJS2YnKsIiYFoT0g1F2wtMHNBAdUiwKIyFS17Bqdq7rBpGMv5FA/exec';
+
+var POLL_MS    = 30000;   // how often the list refreshes
+var SILENT_MIN = 10;      // minutes of no new scan before we say so
+
+/* ══ THURSDAY IS THE LATE DAY ═════════════════════════════════════════════
+   The school starts later on Thursday and THE WHOLE MORNING MOVES WITH IT,
+   deadline included — confirmed by Kim, 1 August. A late begins at 08:40
+   instead of 08:10 and SCMobile messages the parent at 09:30 instead of
+   09:00, so her window is the same fifty minutes it is on any other day.
+   Thursday is a later morning, not a shorter one.
+
+   It matters here for one reason above all: an empty list at 08:15 is
+   ALARMING on a Monday and completely normal on a Thursday. A screen that
+   cried wolf every Thursday would be ignored by the second week — and then
+   it would be ignored on the Monday that mattered.
+
+   ⚠ THESE ARE THE FALLBACK, NOT THE RULE. Since round 3, hubLive returns
+   day: { isThursday, lateFrom, doubleLateAfter } read straight from ⚙️ Config
+   by the same dayRules_() the counting uses — so the cutoffs on this screen
+   and the cutoffs the server applies cannot disagree. THE SERVER ALWAYS WINS.
+
+   The block below is only used when the reply has no `day` — an older
+   deployment, or a reply that arrived malformed. Behaviour is then identical
+   to what it was before round 3, which is why a missing key degrades quietly
+   instead of white-screening a front desk at 08:15. The values are the seeded
+   contents of 'Late cutoff — …' and 'Double late after — …'.
+
+   The SCMobile deadline and the double-late cutoff are the same clock time
+   on both days, so they are one number here. They are TWO DIFFERENT RULES —
+   one SCMobile's, one the school's — and if they ever diverge, this is the
+   line that has to split.
+   ────────────────────────────────────────────────────────────────────────── */
+var DAYS = {
+  normal:   { lateFrom: '08:10', deadline: '09:00' },
+  thursday: { lateFrom: '08:40', deadline: '09:30' }
+};
+
+/* How long after lates begin before silence from the gate is suspicious.
+   THIS ONE IS OURS, not the school's — it is a judgement about when an empty
+   screen stops being normal, not a bell time, so it does not belong in
+   ⚙️ Config and is not asked of the server. */
+var QUIET_GRACE_MIN = 5;
+
+/* How long after the deadline the gate alarms stay switched on. Outside that
+   window an empty list is not evidence of anything — it is the afternoon, or
+   a Saturday. Warning about a silent gate at 22:40 would be the same failure
+   as warning about it every Thursday: noise that teaches somebody to ignore
+   the one that matters. The LIST never stops; only the alarms do. */
+var ALARM_ENDS_MIN = 60;
+
+/* THE ONLY PLACE THE TOKEN LIVES. A variable. Not localStorage, not a
+   cookie, not the URL. */
+var TOKEN = null;
+
+var S = {
+  view:      'signin',
+  rows:      [],     // as returned by hubLive
+  rosterOk:  true,
+  date:      '',     // the server's, in the house format
+  serverTime:'',
+  seen:      {},     // entryId -> true, so only genuinely new rows flash
+  done:      {},     // entryId -> true, the officer's own place-marking
+  online:    true,
+  lastGood:  '',
+  err:       '',
+  busy:      false,
+  first:     true,   // controls the screen's own entrance animation
+  seeded:    false,  // the first list with rows in it is not "new"; only later arrivals flash
+  day:       null    // hubLive's `day` once it has arrived; null = use DAYS
+};
+
+var $ = function(id){ return document.getElementById(id); };
+
+/* ── the day ──────────────────────────────────────────────────────────── */
+/* WHICH DAY IT IS COMES FROM THE SERVER, NOT FROM THIS MACHINE. hubLive
+   returns '13 Aug 2026 (Thu)', so the day of the week arrives already
+   decided by the same clock that timed every scan. A front-desk PC with the
+   wrong timezone cannot turn Thursday into Wednesday here. */
+var DAYNAME = { sun:'Sunday', mon:'Monday', tue:'Tuesday', wed:'Wednesday',
+                thu:'Thursday', fri:'Friday', sat:'Saturday' };
+var MONTHS  = ['January','February','March','April','May','June','July',
+               'August','September','October','November','December'];
+
+function serverDow(){
+  var m = /\(([A-Za-z]{3})\)/.exec(String(S.date || ''));
+  return m ? m[1].toLowerCase() : '';
+}
+function isThursday(){
+  if (S.day) return !!S.day.isThursday;                 // the server said so outright
+  var d = serverDow();
+  return d ? d === 'thu' : new Date().getDay() === 4;   // only before the first reply
+}
+
+/* The day's times. The server's if it sent them, ours if it did not. */
+function today(){
+  var base = S.day || (isThursday() ? DAYS.thursday : DAYS.normal);
+  var from = base.lateFrom, dl = base.deadline;
+  return { lateFrom: from, deadline: dl, expectBy: plusMins(from, QUIET_GRACE_MIN) };
+}
+
+function plusMins(hhmm, n){
+  var m = mins(hhmm);
+  return m === null ? hhmm : hhmmOf(m + n);
+}
+
+/* hubLive's `day`, normalised — or null, which means fall back to DAYS.
+   A half-built object is treated as no object: two of three times would be
+   worse than none, because the screen would silently mix the server's rule
+   with ours. */
+function readDay(res){
+  var d = res && res.day;
+  if (!d) return null;
+  if (!mins(d.lateFrom) || !mins(d.doubleLateAfter)) return null;
+  return { isThursday: !!d.isThursday,
+           lateFrom:   d.lateFrom,
+           /* The SCMobile deadline is not C's rule and C does not store it.
+              It coincides with the double-late cutoff on both days, so we use
+              that number for both — see the note above about which line has to
+              split if they ever diverge. */
+           deadline:   d.doubleLateAfter,
+           fromServer: true };
+}
+
+/* '01 Aug 2026 (Sat)' → 'Saturday, 1 August 2026'. The prototype's wording. */
+function longDate(){
+  var m = /^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})/.exec(String(S.date || ''));
+  var dow = DAYNAME[serverDow()];
+  if (m && dow){
+    var mi = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+               .indexOf(m[2].toLowerCase());
+    if (mi >= 0) return dow + ', ' + Number(m[1]) + ' ' + MONTHS[mi] + ' ' + m[3];
+  }
+  if (S.date) return S.date;
+  var d = new Date();
+  return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()] +
+         ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear();
+}
+
+/* ── talking to the server ────────────────────────────────────────────── */
+/* Content-Type text/plain is what avoids a CORS preflight; the token goes in
+   the BODY, never the URL, because URLs end up in logs and histories. */
+function api(action, body){
+  if (window.__mockApi) return window.__mockApi(action, body);
+  var payload = body || {};
+  payload.action = action;
+  return fetch(GAS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload),
+    redirect: 'follow'
+  }).then(function(r){ return r.json(); });
+}
+
+/* ── sign in ──────────────────────────────────────────────────────────── */
+function signIn(){
+  var el = $('pw');
+  var pw = el ? el.value : '';
+  if (!pw){ S.err = 'Type the password first.'; render(); return; }
+  S.busy = true; S.err = ''; render();
+
+  api('goLogin', { password: pw }).then(function(res){
+    S.busy = false;
+    if (!res || !res.ok){ S.err = (res && res.error) || 'Could not sign in.'; render(); return; }
+    TOKEN = res.token;
+    S.view = 'list';
+    render(true);
+    tick();
+    setInterval(tick, POLL_MS);
+  }).catch(function(){
+    S.busy = false;
+    S.err = 'Could not reach the server. Check the connection and try again.';
+    render();
+  });
+}
+
+function signOut(){
+  TOKEN = null;
+  S.view = 'signin'; S.rows = []; S.seen = {}; S.done = {};
+  S.first = true; S.seeded = false; S.err = ''; S.date = ''; S.day = null;
+  render(true);
+}
+
+/* ── the poll ─────────────────────────────────────────────────────────── */
+function tick(){
+  if (!TOKEN) return;
+  api('hubLive', { token: TOKEN }).then(function(res){
+    if (!res || !res.ok){
+      if (res && res.needsLogin){ var m = res.error; signOut(); S.err = m || 'Please sign in again.'; render(); return; }
+      S.online = false; render(); return;
+    }
+    S.online     = true;
+    S.rows       = res.rows || [];
+    S.rosterOk   = res.rosterOk !== false;
+    S.day        = readDay(res);
+    S.date       = res.date || S.date;
+    S.serverTime = res.serverTime || S.serverTime;
+    S.lastGood   = res.serverTime || S.lastGood;
+    render();
+  }).catch(function(){
+    /* A failed fetch is NOT an empty list. The rows already on screen stay
+       exactly where they are and the header says they are not live. */
+    S.online = false;
+    render();
+  });
+}
+
+/* ── ordering ─────────────────────────────────────────────────────────── */
+/* cohort → class → index number → name. Her SCMobile keying order exactly.
+   A blank index sorts to the END of its class, never the front: a missing
+   number must not look like number zero. */
+function byOrder(a, b){
+  var c = String(a.cls || '').localeCompare(String(b.cls || ''));
+  if (c) return c;
+  var ai = numOrNull(a.indexNo), bi = numOrNull(b.indexNo);
+  if (ai === null && bi !== null) return 1;
+  if (bi === null && ai !== null) return -1;
+  if (ai !== null && bi !== null && ai !== bi) return ai - bi;
+  return String(a.name || '').localeCompare(String(b.name || ''));
+}
+function numOrNull(v){
+  if (v === '' || v === null || v === undefined) return null;
+  var n = Number(v);
+  return isNaN(n) ? null : n;
+}
+function mins(hhmm){
+  var m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm || ''));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+function hhmmOf(m){
+  var h = Math.floor(m / 60), x = m % 60;
+  return (h < 10 ? '0' : '') + h + ':' + (x < 10 ? '0' : '') + x;
+}
+function esc(s){
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function lastScan(){
+  var last = null;
+  S.rows.forEach(function(r){
+    var m = mins(r.time);
+    if (m !== null && (last === null || m > last)) last = m;
+  });
+  return last;
+}
+
+/* ── render ───────────────────────────────────────────────────────────── */
+function render(moved){
+  var v = $('view');
+  var keep = v.scrollTop;
+  v.innerHTML = (S.view === 'signin') ? signinHtml() : listHtml();
+  if (moved) v.scrollTop = 0; else v.scrollTop = keep;
+  wire();
+  S.rows.forEach(function(r){ S.seen[r.entryId] = true; });
+  S.first = false;
+  if (S.view === 'list' && S.rows.length) S.seeded = true;
+}
+
+function signinHtml(){
+  return '<div class="screen centre' + (S.first ? '' : ' still') + '"><div class="wrap">' +
+    '<div class="date">' + esc(longDate()) + '</div>' +
+    '<h1 class="big">Latecoming &mdash; Live Data</h1>' +
+    '<div class="field"><label>Password</label>' +
+      '<input type="password" id="pw" autocomplete="current-password" autocapitalize="off" spellcheck="false"></div>' +
+    '<div class="stack"><button id="go"' + (S.busy ? ' disabled' : '') + '>' +
+      (S.busy ? 'Signing in&hellip;' : 'Continue') + '</button></div>' +
+    (S.err ? '<div class="err">' + esc(S.err) + '</div>' : '') +
+  '</div></div>';
+}
+
+function listHtml(){
+  var day   = today();
+  var total = S.rows.length;
+  var left  = S.rows.filter(function(r){ return !S.done[r.entryId]; }).length;
+
+  /* Four groups, in this order: students the Master does not know, then each
+     cohort, then everyone who arrived after the deadline. */
+  var dl      = mins(day.deadline);
+  var isLate  = function(r){ var m = mins(r.time); return m !== null && m >= dl; };
+  var early   = S.rows.filter(function(r){ return !isLate(r); });
+  var after   = S.rows.filter(isLate);
+
+  var body = '';
+  if (!total){
+    body = '<div class="blank">No latecomers recorded yet this morning.</div>';
+  } else {
+    body += groupHtml('Class not known', early.filter(function(r){ return !String(r.cls || '').trim(); }), true);
+    body += groupHtml('JC1', early.filter(function(r){ return r.cohort === 'JC1' && String(r.cls || '').trim(); }));
+    body += groupHtml('JC2', early.filter(function(r){ return r.cohort === 'JC2' && String(r.cls || '').trim(); }));
+    body += groupHtml('Cohort not known',
+                      early.filter(function(r){
+                        return String(r.cls || '').trim() && r.cohort !== 'JC1' && r.cohort !== 'JC2';
+                      }), true);
+    if (after.length){
+      body += '<div class="deadline">' + day.deadline.replace(':', '.') + ' &middot; SCMobile deadline</div>' +
+              after.slice().sort(byOrder).map(rowHtml).join('');
+    }
+  }
+
+  return '<div class="screen' + (S.first ? '' : ' still') + '"><div class="wrap wide">' +
+    '<div class="date">' + esc(longDate()) + beatHtml() + '</div>' +
+    '<div class="counts"><h1>' + total + ' late so far.</h1>' +
+      '<div class="togo' + (left ? '' : ' zero') + '">' +
+        (left ? '<b>' + left + '</b> still to log.' : '<b>All logged.</b>') + '</div></div>' +
+    '<div class="note how">Click a row to strike it through once you have logged that student ' +
+      'into SCMobile. The row greys out and the count above drops by one, so you can always ' +
+      'see who is left this morning. Nothing is saved &mdash; clicking again undoes it.</div>' +
+    notesHtml() +
+    body +
+    footHtml() +
+  '</div></div>';
+}
+
+function groupHtml(label, rows, alt){
+  if (!rows.length) return '';
+  return '<div class="grouplabel' + (alt ? ' unknown' : '') + '">' + esc(label) + '</div>' +
+         rows.slice().sort(byOrder).map(rowHtml).join('');
+}
+
+function rowHtml(r){
+  var idx = (r.indexNo === '' || r.indexNo === null || r.indexNo === undefined)
+    ? '<div class="idx none">&mdash;</div>'
+    : '<div class="idx">' + esc(r.indexNo) + '</div>';
+
+  var tag = '';
+  if (Number(r.counts) === 2) tag = '<div class="tag twice">counts twice</div>';
+  else if (r.state && String(r.state).toLowerCase() !== 'counted')
+    tag = '<div class="tag">' + esc(r.state) + '</div>';
+
+  return '<div class="lrow' + (S.done[r.entryId] ? ' done' : '') +
+              (S.seeded && !S.seen[r.entryId] ? ' fresh' : '') +
+              '" data-id="' + esc(r.entryId) + '">' +
+    '<div class="cls">' + (String(r.cls || '').trim() ? esc(r.cls) : '&mdash;') + '</div>' + idx +
+    '<div class="nm">' + esc(r.name || '') + '</div>' + tag +
+    '<div class="tm">' + esc(r.time || '') + '</div>' +
+  '</div>';
+}
+
+/* ── the heartbeat: silence must never read as good news ──────────────── */
+function beatHtml(){
+  if (!S.online){
+    return '<span class="beat down"><i></i>Not connected' +
+           (S.lastGood ? ' &mdash; showing ' + esc(S.lastGood) : '') + '</span>';
+  }
+  var last = lastScan();
+  if (last === null) return '<span class="beat"><i></i>Live &middot; no scans yet</span>';
+  var now = mins(S.serverTime);
+  var gap = (now === null) ? 0 : now - last;
+  return '<span class="beat' + (gap >= SILENT_MIN && inAlarmWindow() ? ' stale' : '') +
+         '"><i></i>Live &middot; last scan ' + hhmmOf(last) + '</span>';
+}
+
+/* Are we inside the part of the day when silence from the gate means
+   something? Starts a few minutes after lates begin, ends an hour after the
+   deadline. */
+function inAlarmWindow(){
+  var day = today(), now = mins(S.serverTime);
+  if (now === null) return false;
+  var from = mins(day.expectBy), to = mins(day.deadline);
+  if (from === null || to === null) return false;
+  return now >= from && now <= to + ALARM_ENDS_MIN;
+}
+
+function notesHtml(){
+  var day = today(), out = '', last = lastScan(), now = mins(S.serverTime);
+
+  /* Thursday. Said out loud, because the shape of the morning changes and
+     nothing else on the screen would tell her. */
+  if (isThursday()){
+    out += '<div class="note say"><b>Thursday &mdash; the late start.</b> Nobody is late until ' +
+           'after ' + day.lateFrom + ', so an empty list before then is normal, and SCMobile ' +
+           'does not message parents until ' + day.deadline.replace(':', '.') + '. The whole ' +
+           'morning shifts by half an hour &mdash; your window is the same length as any other day.</div>';
+  }
+
+  /* The Master would not open. The list is still complete and the cohorts are
+     still right; only the index numbers are gone. */
+  if (!S.rosterOk){
+    out += '<div class="note warn"><b>Index numbers unavailable.</b> The Master Database could ' +
+           'not be opened, so the list is sorted by class and name instead. Everyone who has ' +
+           'been scanned is still here.</div>';
+  }
+
+  /* The connection dropped. Never show a stale list as a live one. */
+  if (!S.online){
+    out += '<div class="note bad"><b>Not connected.</b> This list is as it was at ' +
+           esc(S.lastGood || 'sign-in') + ' and is not updating. Nothing you have ticked ' +
+           'has been lost.</div>';
+  }
+  /* The gate has gone quiet. The dangerous one: an empty list looks exactly
+     like nobody having been late. */
+  else if (last === null && inAlarmWindow()){
+    out += '<div class="note bad"><b>No scans at all this morning.</b> It is ' + esc(S.serverTime) +
+           ', lates began at ' + day.lateFrom + ', and nothing has come from the gate. ' +
+           'Check with them before assuming nobody was late.</div>';
+  }
+  else if (last !== null && now !== null && (now - last) >= SILENT_MIN && inAlarmWindow()){
+    out += '<div class="note warn"><b>No scans since ' + hhmmOf(last) + '.</b> Check with the gate.</div>';
+  }
+  return out;
+}
+
+function footHtml(){
+  return '<div class="foot"><span>This screen writes nothing &mdash; your strike-throughs ' +
+         'disappear when you close it.</span><span class="sp"></span>' +
+         '<button class="plain" id="out">Sign out</button></div>';
+}
+
+/* ── wiring ───────────────────────────────────────────────────────────── */
+function wire(){
+  var go = $('go'), pw = $('pw'), out = $('out'), v = $('view');
+  if (go) go.addEventListener('click', signIn);
+  if (pw){ pw.addEventListener('keydown', function(e){ if (e.key === 'Enter') signIn(); }); pw.focus(); }
+  if (out) out.addEventListener('click', signOut);
+  v.onclick = function(e){
+    var row = e.target.closest ? e.target.closest('.lrow') : null;
+    if (!row) return;
+    var id = row.getAttribute('data-id');
+    if (!id) return;
+    /* IN PLACE. No re-fetch, no re-render — the row she just clicked must not
+       make the whole screen move. */
+    if (S.done[id]) delete S.done[id]; else S.done[id] = true;
+    row.classList.toggle('done', !!S.done[id]);
+    var left = S.rows.filter(function(r){ return !S.done[r.entryId]; }).length;
+    var togo = document.querySelector('.counts .togo');
+    if (togo){
+      togo.className = 'togo' + (left ? '' : ' zero');
+      togo.innerHTML = left ? '<b>' + left + '</b> still to log.' : '<b>All logged.</b>';
+    }
+  };
+}
+
+/* Exposed for the automated checks only. Reads nothing it does not already
+   show and cannot sign anybody in. */
+window.__gostate = S;
+window.__gorender = render;
+window.__gothursday = isThursday;
+
+render(true);
+
+})();
+</script>
+</body>
+</html>
