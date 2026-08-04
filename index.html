@@ -98,6 +98,37 @@ h1.big{font-size:44px;margin-bottom:6px}
 .centre .field{margin-left:auto;margin-right:auto;text-align:left}
 .field label{display:block;font-size:11.5px;font-weight:600;text-transform:uppercase;
              letter-spacing:.14em;color:var(--muted);margin-bottom:8px}
+
+/* THE PASSWORD REVEAL, as on the gate scanner, the green slip page and the
+   Hub. This is a shared front-desk machine and the second thing anybody does
+   after a failed sign-in is type it wrong again.
+   type="button" DELIBERATELY — a bare <button> submits inside a form, which
+   would sign you in mid-peek. It resets to hidden on every render, so a failed
+   attempt never leaves the password sitting visible on a counter screen. */
+/* THE RESET IS THE POINT OF THIS BLOCK, and it is why the eye had a box.
+   This page styles the bare <button> ELEMENT — background, padding, 9px
+   corners and a drop shadow — so every button gets a pill unless it opts out.
+   `.peek` set border and background but not box-shadow, border-radius,
+   padding or the hover transform, so the shadow and the corners survived and
+   the icon sat in a little raised box. The green slip and gate pages put that
+   styling on a .btn CLASS instead, which is why the identical markup looked
+   right there and wrong here. Everything the element rule sets is undone here
+   explicitly rather than by hoping specificity sorts it out. */
+.field.pw{position:relative}
+.field.pw input{padding-right:44px}
+.peek{position:absolute;right:0;bottom:5px;padding:7px 2px;
+  border:0;background:none;box-shadow:none;border-radius:0;
+  color:var(--muted);cursor:pointer;font:inherit;
+  transition:color .2s ease}
+.peek:hover{background:none;box-shadow:none;transform:none;color:var(--accent)}
+.peek:active{transform:none}
+.peek svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round;display:block}
+.peek .slash{opacity:0;transition:opacity .2s ease}
+.peek.showing .slash{opacity:1}
+.peek:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:5px}
+
+.whoami{font-size:13px;color:var(--muted);margin-right:14px;white-space:nowrap}
 .field input{
   width:100%;font:inherit;font-size:21px;color:var(--ink);
   background:none;border:0;border-bottom:2px solid var(--line);
@@ -270,6 +301,7 @@ var TOKEN = null;
 
 var S = {
   view:      'signin',
+  who:       '',     // who is signed in, for the header only — never sent
   rows:      [],     // as returned by hubLive
   rosterOk:  true,
   date:      '',     // the server's, in the house format
@@ -370,7 +402,9 @@ function api(action, body){
 /* ── sign in ──────────────────────────────────────────────────────────── */
 function signIn(){
   var el = $('pw');
+  var nm = $('nm');
   var pw = el ? el.value : '';
+  S.who = nm ? nm.value.trim() : '';
   if (!pw){ S.err = 'Type the password first.'; render(); return; }
   S.busy = true; S.err = ''; render();
 
@@ -527,8 +561,24 @@ function signinHtml(){
   return '<div class="screen centre' + (S.first ? '' : ' still') + '"><div class="wrap">' +
     '<div class="date">' + esc(longDate()) + '</div>' +
     '<h1 class="big">Latecoming &mdash; Live Data</h1>' +
-    '<div class="field"><label>Password</label>' +
-      '<input type="password" id="pw" autocomplete="current-password" autocapitalize="off" spellcheck="false"></div>' +
+    /* THE NAME IS FOR THE SCREEN, NOT FOR THE RECORD, and that is worth being
+       straight about: this page writes nothing to the Log — it only reads
+       hubLive — so there is nowhere for a name to be recorded even if we
+       wanted one. It is here so the header can say who is signed in on a
+       shared counter machine, and so the sign-in screen matches the other
+       three. If this page ever gains a write, this is the field that should
+       travel with it. */
+    '<div class="field"><label>Your name</label>' +
+      '<input id="nm" autocomplete="name" value="' + esc(S.who || '') + '"></div>' +
+    '<div class="field pw"><label>Password</label>' +
+      '<input type="password" id="pw" autocomplete="current-password" autocapitalize="off" spellcheck="false">' +
+      '<button type="button" class="peek" id="peek" aria-label="Show the password" title="Show the password">' +
+        '<svg viewBox="0 0 24 24">' +
+          '<path d="M1.5 12S5 5.5 12 5.5 22.5 12 22.5 12 19 18.5 12 18.5 1.5 12 1.5 12Z"/>' +
+          '<circle cx="12" cy="12" r="3.2"/>' +
+          '<path class="slash" d="M3.5 3.5l17 17"/>' +
+        '</svg>' +
+      '</button></div>' +
     '<div class="stack"><button id="go"' + (S.busy ? ' disabled' : '') + '>' +
       (S.busy ? 'Signing in&hellip;' : 'Continue') + '</button></div>' +
     (S.err ? '<div class="err">' + esc(S.err) + '</div>' : '') +
@@ -668,8 +718,12 @@ function notesHtml(){
 }
 
 function footHtml(){
+  /* The name appears here and nowhere else. It is not sent to the server and
+     not recorded anywhere — this screen writes nothing — so the only honest
+     thing it can do is say who is signed in on a shared machine. */
   return '<div class="foot"><span>This screen writes nothing &mdash; your strike-throughs ' +
          'disappear when you close it.</span><span class="sp"></span>' +
+         (S.who ? '<span class="whoami">Signed in as ' + esc(S.who) + '</span>' : '') +
          '<button class="plain" id="out">Sign out</button></div>';
 }
 
@@ -677,7 +731,22 @@ function footHtml(){
 function wire(){
   var go = $('go'), pw = $('pw'), out = $('out'), v = $('view');
   if (go) go.addEventListener('click', signIn);
-  if (pw){ pw.addEventListener('keydown', function(e){ if (e.key === 'Enter') signIn(); }); pw.focus(); }
+  var nm = $('nm'), peek = $('peek');
+  if (nm) nm.addEventListener('keydown', function(e){ if (e.key === 'Enter' && pw) pw.focus(); });
+  if (peek) peek.addEventListener('click', function(){
+    if (!pw) return;
+    var showing = pw.type === 'text';
+    pw.type = showing ? 'password' : 'text';
+    this.classList.toggle('showing', !showing);
+    var lbl = showing ? 'Show the password' : 'Hide the password';
+    this.setAttribute('aria-label', lbl); this.setAttribute('title', lbl);
+    pw.focus();
+  });
+  if (pw) pw.addEventListener('keydown', function(e){ if (e.key === 'Enter') signIn(); });
+  /* Name first if it is empty, password first if she has already typed it —
+     the same rule the Hub uses, so a returning officer lands on the field she
+     actually has to fill. */
+  if (nm && !S.who) nm.focus(); else if (pw) pw.focus();
   if (out) out.addEventListener('click', signOut);
   v.onclick = function(e){
     var row = e.target.closest ? e.target.closest('.lrow') : null;
