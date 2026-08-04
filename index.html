@@ -387,7 +387,40 @@ function longDate(){
 /* ── talking to the server ────────────────────────────────────────────── */
 /* Content-Type text/plain is what avoids a CORS preflight; the token goes in
    the BODY, never the URL, because URLs end up in logs and histories. */
+/* ── RETRY, WITH THE WAIT SPREAD OUT ──────────────────────────────────────
+   Measured on 4 August 2026: requests to this deployment succeed 100% of the
+   time when nothing else is talking to it, and start failing as soon as
+   anything is — 93% with two devices, 80% with two devices both busy. The
+   fault is CONCURRENCY, not the device, the network or the browser.
+
+   That matters for how a retry is written. A fixed delay is the wrong shape
+   when the cause is collision: two clients that collide, both wait exactly
+   700ms, and collide again. So the wait GROWS and is JITTERED — a random
+   spread — which is what pulls two unlucky clients apart instead of keeping
+   them in step.
+
+   WHICH ACTIONS RETRY IS THE PART TO READ CAREFULLY. Reads and sign-ins do:
+   they change nothing, so sending one again costs a second and risks nothing.
+   logScan, logEarly and undo DO NOT, and must never be added — retrying a
+   write whose reply went missing is how one late arrival becomes two, and
+   nobody would ever notice. When a write's reply is lost the honest answer is
+   "it may have worked, go and look". */
+var RETRY_SAFE = { goLogin:1, hubLive:1, hubEarly:1 };
+
 function api(action, body){
+  var left = RETRY_SAFE[action] ? 3 : 0;
+  function attempt(){
+    return apiOnce(action, body).catch(function(e){
+      if (left <= 0) throw e;
+      var wait = 500 * Math.pow(2, 3 - left) + Math.floor(Math.random() * 400);
+      left--;
+      return new Promise(function(r){ setTimeout(r, wait); }).then(attempt);
+    });
+  }
+  return attempt();
+}
+
+function apiOnce(action, body){
   if (window.__mockApi) return window.__mockApi(action, body);
   var payload = body || {};
   payload.action = action;
@@ -417,6 +450,9 @@ function signIn(){
     render(true);
     tick();
     setInterval(tick, POLL_MS);
+    /* Catch up the moment somebody looks at it again — otherwise skipping the
+       poll while hidden would leave a stale list on screen for up to 30s. */
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden) tick(); });
   }).catch(function(){
     S.busy = false;
     S.err = 'Could not reach the server. Check the connection and try again.';
@@ -484,6 +520,11 @@ function signOut(why){
 /* ── the poll ─────────────────────────────────────────────────────────── */
 function tick(){
   if (!TOKEN) return;
+  /* DON'T POLL A SCREEN NOBODY IS LOOKING AT. Added 4 August 2026: requests to
+     this deployment fail when several arrive together, so a tab left open on a
+     back desk quietly refreshing every 30 seconds is load that costs nothing to
+     remove. It resumes the moment the tab is visible again. */
+  if (document.hidden) return;
   api('hubLive', { token: TOKEN }).then(function(res){
     if (!res || !res.ok){
       if (res && res.needsLogin){ var m = res.error; signOut(); S.err = m || 'Please sign in again.'; render(); return; }
