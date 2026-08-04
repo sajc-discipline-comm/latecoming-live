@@ -378,6 +378,7 @@ function signIn(){
     S.busy = false;
     if (!res || !res.ok){ S.err = (res && res.error) || 'Could not sign in.'; render(); return; }
     TOKEN = res.token;
+    idleStart(res.idleMinutes);
     S.view = 'list';
     render(true);
     tick();
@@ -389,10 +390,60 @@ function signIn(){
   });
 }
 
-function signOut(){
+
+/* ── THE IDLE SIGN-OUT, ADDED 3 AUGUST 2026 ────────────────────────────────
+   This is a SHARED MACHINE in a room the public walks through. The threat is
+   not somebody guessing the password; it is the page still being signed in
+   when the person who signed in has walked away. That is the whole reason this
+   exists, and it is why the Hub does not have one — the Hub sits on somebody's
+   own laptop.
+
+   THE NUMBER COMES FROM ⚙️ Config, arriving with the token at sign-in, so it
+   can be changed in a cell rather than by re-committing this page. Blank or 0
+   turns it off, which is a real choice somebody may want on a machine that
+   nobody else can reach.
+
+   IT COUNTS INACTIVITY, NOT TIME SIGNED IN. Every touch, tap, key and scroll
+   pushes the deadline back, so it never signs out somebody mid-slip. The
+   camera does not count as activity — a scan screen left open pointing at a
+   wall is exactly the state this is here to end.
+
+   IT SAYS WHY. Landing on a sign-in screen with no explanation reads as a
+   fault, and the next thing somebody does with an app that seems to have
+   broken is stop using it. */
+var IDLE_MIN = 0, idleTimer = null;
+
+function idleStart(mins){
+  IDLE_MIN = Number(mins) || 0;
+  idleBump();
+}
+function idleBump(){
+  if (idleTimer) clearTimeout(idleTimer);
+  if (!IDLE_MIN) return;                       /* 0 or blank: switched off */
+  idleTimer = setTimeout(function(){
+    idleTimer = null;
+    if (!!!TOKEN) return;         /* already signed out */
+    signOut('Signed out after ' + IDLE_MIN + ' minutes without use. ' +
+            'This is a shared screen, so it does not stay open on its own.');
+  }, IDLE_MIN * 60 * 1000);
+}
+function idleStop(){ if (idleTimer) clearTimeout(idleTimer); idleTimer = null; }
+
+/* Passive listeners: this must never cost a frame on a phone mid-scan. */
+['pointerdown','keydown','touchstart','scroll','wheel'].forEach(function(ev){
+  document.addEventListener(ev, idleBump, { passive: true });
+});
+
+function signOut(why){
   TOKEN = null;
+  idleStop();
   S.view = 'signin'; S.rows = []; S.seen = {}; S.done = {};
-  S.first = true; S.seeded = false; S.err = ''; S.date = ''; S.day = null;
+  /* `why` is shown on the sign-in screen. Landing back at a password box with
+     no explanation reads as a fault, and the next thing somebody does with an
+     app that seems to have broken is stop using it. Called with no argument —
+     the Sign out button, and tick() on an expired token — it stays blank,
+     which is what those two paths already expected. */
+  S.first = true; S.seeded = false; S.err = why || ''; S.date = ''; S.day = null;
   render(true);
 }
 
