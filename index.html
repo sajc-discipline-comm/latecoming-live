@@ -249,6 +249,39 @@ var GAS_URL = 'https://script.google.com/macros/s/AKfycbxm68iLB0wBy-goORwxBAK3Zy
 var POLL_MS    = 30000;   // how often the list refreshes
 var SILENT_MIN = 10;      // minutes of no new scan before we say so
 
+/* ══ ONE POLL TIMER, NOT ONE PER SIGN-IN ══════════════════════════════════
+   Added 4 August 2026, and it is not housekeeping.
+
+   The interval used to be started inside the goLogin reply handler, and
+   signOut() never stopped it. Sign out and back in on the same machine — the
+   ordinary thing that happens when one officer hands the desk to another —
+   and the page polled twice as often. Three times after the next handover.
+   Nothing on screen would have looked wrong.
+
+   That matters here more than it would anywhere else. Concurrent requests to
+   this one deployment are the MEASURED cause of the connection failures we
+   spent 4 August tracking down: /exec redirects to a one-time address, and
+   requests that arrive together break each other's ticket. A page quietly
+   multiplying its own request rate is the failure we just fixed, growing back.
+
+   startPolling() is safe to call twice; the second call replaces the first
+   rather than adding to it. stopPolling() is called by signOut().          */
+var pollTimer = null;
+function startPolling(){
+  stopPolling();
+  pollTimer = setInterval(tick, POLL_MS);
+}
+function stopPolling(){
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = null;
+}
+/* Catch up the moment somebody looks at it again — otherwise skipping the poll
+   while hidden would leave a stale list on screen for up to 30s. Registered
+   ONCE, at load, not per sign-in: tick() returns immediately when there is no
+   token, so an idle listener costs nothing, and a listener added per sign-in
+   cannot be removed later — there is no handle to remove it by. */
+document.addEventListener('visibilitychange', function(){ if (!document.hidden) tick(); });
+
 /* ══ THURSDAY IS THE LATE DAY ═════════════════════════════════════════════
    The school starts later on Thursday and THE WHOLE MORNING MOVES WITH IT,
    deadline included — confirmed by Kim, 1 August. A late begins at 08:40
@@ -449,10 +482,7 @@ function signIn(){
     S.view = 'list';
     render(true);
     tick();
-    setInterval(tick, POLL_MS);
-    /* Catch up the moment somebody looks at it again — otherwise skipping the
-       poll while hidden would leave a stale list on screen for up to 30s. */
-    document.addEventListener('visibilitychange', function(){ if (!document.hidden) tick(); });
+    startPolling();
   }).catch(function(){
     S.busy = false;
     S.err = 'Could not reach the server. Check the connection and try again.';
@@ -507,6 +537,7 @@ function idleStop(){ if (idleTimer) clearTimeout(idleTimer); idleTimer = null; }
 function signOut(why){
   TOKEN = null;
   idleStop();
+  stopPolling();   /* or the next sign-in adds a second timer to the first */
   S.view = 'signin'; S.rows = []; S.seen = {}; S.done = {};
   /* `why` is shown on the sign-in screen. Landing back at a password box with
      no explanation reads as a fault, and the next thing somebody does with an
@@ -788,7 +819,13 @@ function wire(){
      the same rule the Hub uses, so a returning officer lands on the field she
      actually has to fill. */
   if (nm && !S.who) nm.focus(); else if (pw) pw.focus();
-  if (out) out.addEventListener('click', signOut);
+  /* WRAPPED, NOT PASSED DIRECTLY. addEventListener hands the click event to
+     the first parameter of whatever it is given, so `signOut` received the
+     PointerEvent as its `why` — and the sign-in screen then rendered
+     "[object PointerEvent]" where the reason for signing out belongs. Fixed
+     4 August 2026. signOut()'s own comment says this path leaves the message
+     blank; now it does. */
+  if (out) out.addEventListener('click', function(){ signOut(); });
   v.onclick = function(e){
     var row = e.target.closest ? e.target.closest('.lrow') : null;
     if (!row) return;
