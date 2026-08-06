@@ -391,7 +391,13 @@ function plusMins(hhmm, n){
 function readDay(res){
   var d = res && res.day;
   if (!d) return null;
-  if (!mins(d.lateFrom) || !mins(d.doubleLateAfter)) return null;
+  /* `=== null`, NOT falsy. mins() returns MINUTES PAST MIDNIGHT, so a valid
+     '00:00' is 0, and `!0` is true — a bell time of midnight would have been
+     read as a missing bell time and this whole object thrown away. Absurd for
+     a school day, which is why it survived; but the guard means "did this
+     parse", and testing truthiness answers a different question. Fixed
+     4 August 2026. */
+  if (mins(d.lateFrom) === null || mins(d.doubleLateAfter) === null) return null;
   return { isThursday: !!d.isThursday,
            lateFrom:   d.lateFrom,
            /* The SCMobile deadline is not C's rule and C does not store it.
@@ -522,7 +528,7 @@ function idleBump(){
   if (!IDLE_MIN) return;                       /* 0 or blank: switched off */
   idleTimer = setTimeout(function(){
     idleTimer = null;
-    if (!!!TOKEN) return;         /* already signed out */
+    if (!TOKEN) return;           /* already signed out */
     signOut('Signed out after ' + IDLE_MIN + ' minutes without use. ' +
             'This is a shared screen, so it does not stay open on its own.');
   }, IDLE_MIN * 60 * 1000);
